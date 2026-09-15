@@ -247,7 +247,20 @@ body {
   flex: 1;
 }
 
+.nav-link {
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.nav-link:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
 .session-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.78rem;
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--line);
@@ -966,7 +979,8 @@ body {
   80% { transform: translateX(3px); }
 }
 
-.app-shell.shake {
+.app-shell.shake,
+.btc-shell.shake {
   animation: app-shake 0.45s ease;
 }
 
@@ -1141,6 +1155,366 @@ body {
   border-top: 1px solid var(--line);
 }
 
+/* ==================== BETWEEN THE CARDS ==================== */
+
+.btc-shell {
+  --felt-dark: #0a2e20;
+  --felt: #0e3d29;
+  --felt-light: #145536;
+  --gold: #e0b84b;
+  --gold-bright: #f4d47c;
+  --cream: #f6f0e2;
+  --ink: #16241d;
+  --win: #3fae6a;
+  --lose: #d94f4f;
+  --line: rgba(224, 184, 75, 0.25);
+  min-height: 100vh;
+  background: radial-gradient(ellipse at top, var(--felt-light), var(--felt) 55%, var(--felt-dark) 100%);
+  color: var(--cream);
+  font-family: Arial, Helvetica, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.btc-shell * {
+  box-sizing: border-box;
+}
+
+.btc-shell button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btc-shell button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.btc-shell input {
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--line);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.btc-shell input::placeholder {
+  color: rgba(246, 240, 226, 0.4);
+}
+
+.btc-shell input:focus {
+  border-color: var(--gold);
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.btc-main {
+  flex: 1;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 2rem 3rem;
+}
+
+.btc-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+  padding: 3rem 2rem;
+}
+
+.btc-intro h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--cream);
+}
+
+.btc-intro .start-button {
+  width: auto;
+  padding: 0.9rem 1.75rem;
+  margin-top: 0.75rem;
+}
+
+.btc-table {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  text-align: center;
+}
+
+.btc-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+}
+
+.btc-pair-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.btc-pair-third {
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.btc-pair-third::before {
+  content: "";
+  position: absolute;
+  top: -1.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 1rem;
+  background: linear-gradient(var(--line), transparent);
+}
+
+.btc-versus {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: rgba(246, 240, 226, 0.45);
+  text-transform: uppercase;
+}
+
+/* ---- Playing card ---- */
+
+.btc-card {
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.btc-card-sm {
+  width: 98px;
+}
+
+.btc-card-ratio {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-top: 140%;
+  perspective: 1200px;
+}
+
+.btc-card-inner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.btc-card.revealed .btc-card-inner {
+  transform: rotateY(180deg);
+}
+
+.btc-card.pending .btc-card-inner {
+  animation: card-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes card-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 184, 75, 0.5); transform: translateY(0) rotateY(0); }
+  50% { box-shadow: 0 0 22px 6px rgba(224, 184, 75, 0.35); transform: translateY(-4px) rotateY(0); }
+}
+
+.btc-card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btc-card-back {
+  background:
+    repeating-linear-gradient(45deg, var(--gold) 0 8px, #7a5a1e 8px 16px);
+  border: 3px solid var(--gold-bright);
+  color: rgba(22, 36, 29, 0.55);
+}
+
+.btc-card-front {
+  background: var(--cream);
+  border: 3px solid var(--gold-bright);
+  transform: rotateY(180deg);
+  font-weight: 800;
+}
+
+.btc-card-front.red {
+  color: var(--lose);
+}
+
+.btc-card-front.black {
+  color: var(--ink);
+}
+
+.btc-card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.btc-card-corner small {
+  font-size: 0.85rem;
+}
+
+.btc-card-corner.top {
+  top: 0.4rem;
+  left: 0.5rem;
+}
+
+.btc-card-corner.bottom {
+  bottom: 0.4rem;
+  right: 0.5rem;
+  transform: rotate(180deg);
+}
+
+.btc-card-suit {
+  font-size: 2.6rem;
+}
+
+.btc-card-sm .btc-card-suit {
+  font-size: 1.9rem;
+}
+
+.btc-card-sm .btc-card-corner {
+  font-size: 0.85rem;
+}
+
+/* ---- Range / result ---- */
+
+.btc-range {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.btc-range span {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: rgba(246, 240, 226, 0.5);
+  text-transform: uppercase;
+}
+
+.btc-range strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1.3rem;
+  color: var(--gold-bright);
+}
+
+.btc-odds {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: rgba(246, 240, 226, 0.6) !important;
+  font-size: 0.78rem !important;
+}
+
+.btc-dead strong {
+  color: var(--lose);
+}
+
+.btc-result-line {
+  margin: 0;
+  color: rgba(246, 240, 226, 0.75);
+  font-size: 0.95rem;
+}
+
+.btc-result-line b {
+  color: var(--gold-bright);
+}
+
+.btc-controls {
+  margin-top: 1.5rem;
+}
+
+.btc-bet-fields {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.btc-bet-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.btc-reveal-button {
+  white-space: nowrap;
+}
+
+.btc-pass-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1.5px dashed rgba(246, 240, 226, 0.35);
+  color: rgba(246, 240, 226, 0.75);
+  border-radius: 12px;
+  padding: 0.65rem 1.1rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.btc-pass-button em {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-style: normal;
+}
+
+.btc-pass-button svg {
+  transition: transform 0.25s ease;
+}
+
+.btc-pass-button span {
+  font-weight: 400;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: rgba(246, 240, 226, 0.45);
+}
+
+.btc-pass-button:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--lose);
+  color: #ffb4b4;
+  background: rgba(217, 79, 79, 0.1);
+  transform: translateY(-2px);
+}
+
+.btc-pass-button:hover:not(:disabled) svg {
+  transform: translateX(4px);
+}
+
+.btc-pass-button:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
 /* ---- Responsive ---- */
 
 @media (max-width: 900px) {
@@ -1212,5 +1586,45 @@ body {
 
   .settlement-footer button {
     justify-content: center;
+  }
+
+  .btc-main {
+    padding: 1.5rem 1.1rem 2rem;
+  }
+
+  .btc-card {
+    width: 92px;
+  }
+
+  .btc-card-sm {
+    width: 72px;
+  }
+
+  .btc-card-suit {
+    font-size: 1.9rem;
+  }
+
+  .btc-card-sm .btc-card-suit {
+    font-size: 1.5rem;
+  }
+
+  .btc-pair {
+    gap: 1.25rem;
+  }
+
+  .btc-pair-top {
+    gap: 0.9rem;
+  }
+
+  .btc-versus {
+    width: 100%;
+  }
+
+  .btc-bet-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .btc-bet-actions {
+    flex-direction: column;
   }
 }
