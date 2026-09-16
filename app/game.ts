@@ -30,17 +30,32 @@ const RANKS: { label: string; value: number }[] = [
 export const suitSymbol = (suit: Suit) => SUITS.find(s => s.key === suit)!.symbol;
 export const isRed = (suit: Suit) => suit === 'H' || suit === 'D';
 
+const DECK_COUNT = 3;
+
 export function buildDeck(): Card[] {
   const deck: Card[] = [];
-  for (const suit of SUITS) for (const rank of RANKS) deck.push({ suit: suit.key, label: rank.label, value: rank.value, id: `${rank.label}${suit.key}` });
+  for (let d = 0; d < DECK_COUNT; d++) {
+    for (const suit of SUITS) for (const rank of RANKS) deck.push({ suit: suit.key, label: rank.label, value: rank.value, id: `${rank.label}${suit.key}-${d}` });
+  }
   return deck;
+}
+
+function randomInt(max: number): number {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return buf[0] % max;
+  }
+  return Math.floor(Math.random() * max);
 }
 
 export function shuffle<T>(items: T[]): T[] {
   const arr = items.slice();
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  for (let pass = 0; pass < 7; pass++) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
   }
   return arr;
 }
@@ -62,11 +77,12 @@ export const isWin = (round: Round) => round.card3.value > round.low && round.ca
 
 type Snapshot = { started: boolean; opponents: Opponent[]; selected: string; bet: string; deposit: string; message: string };
 
-export type Phase = 'select' | 'dealing' | 'ready' | 'dead' | 'placed' | 'revealing' | 'result';
-const IDLE_PHASES: Phase[] = ['select', 'result', 'dead'];
+export type Phase = 'select' | 'dealing' | 'ready' | 'placed' | 'revealing' | 'result';
+const IDLE_PHASES: Phase[] = ['select', 'result'];
 
 export type State = Snapshot & {
   history: Snapshot[];
+  future: Snapshot[];
   error: string;
   resultFlash: ResultFlash | null;
   round: Round | null;
@@ -75,12 +91,18 @@ export type State = Snapshot & {
   revealed2: boolean;
   revealed3: boolean;
   activeBet: number | null;
+  limit: string;
+  limitAmount: number | null;
+  gameOver: boolean;
+  opponentName: string;
+  streak: boolean;
 };
 
 export const initialState: State = {
   started: false, opponents: [], selected: '', bet: '', deposit: '', message: '',
-  history: [], error: '', resultFlash: null,
+  history: [], future: [], error: '', resultFlash: null,
   round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null,
+  limit: '', limitAmount: null, gameOver: false, opponentName: '', streak: false,
 };
 
 export const poolOf = (opponents: Opponent[]) => -opponents.reduce((sum, p) => sum + p.balance, 0) || 0;
@@ -92,6 +114,19 @@ export function evenShares(pool: number, count: number): number[] {
   return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
+export function afterSplitBalances(opponents: Opponent[]): number[] {
+  const shares = evenShares(poolOf(opponents), opponents.length);
+  return opponents.map((p, i) => p.balance + shares[i]);
+}
+
+export const positiveAfterSplitSum = (opponents: Opponent[]) => afterSplitBalances(opponents).reduce((sum, v) => sum + Math.max(v, 0), 0);
+
+function nextOpponentId(opponents: Opponent[], currentId: string): string {
+  if (!opponents.length) return '';
+  const index = opponents.findIndex(o => o.id === currentId);
+  return opponents[index === -1 ? 0 : (index + 1) % opponents.length].id;
+}
+
 export function parseMoney(value: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(value.trim())) return null;
   const [whole, fraction = ''] = value.trim().split('.');
@@ -101,10 +136,12 @@ export function parseMoney(value: string): number | null {
 
 type Action =
   | { type: 'start'; opponents: Opponent[] }
-  | { type: 'input'; field: 'bet' | 'deposit'; value: string }
-  | { type: 'select'; id: string }
+  | { type: 'input'; field: 'bet' | 'deposit' | 'limit' | 'opponentName'; value: string }
+  | { type: 'addOpponent' }
   | { type: 'deposit' }
   | { type: 'split' }
+  | { type: 'setLimit' }
+  | { type: 'clearLimit' }
   | { type: 'deal' }
   | { type: 'revealFirst' }
   | { type: 'revealSecond' }
@@ -112,27 +149,67 @@ type Action =
   | { type: 'pass' }
   | { type: 'revealThird' }
   | { type: 'resolve' }
+  | { type: 'next' }
   | { type: 'undo' }
+  | { type: 'redo' }
   | { type: 'clearFlash' };
 
 export function reducer(state: State, action: Action): State {
-  if (action.type === 'start') return action.opponents.length ? { ...initialState, started: true, opponents: action.opponents.map(p => ({ ...p, balance: 0 })) } : state;
+  if (action.type === 'start') return action.opponents.length ? { ...initialState, started: true, opponents: action.opponents.map(p => ({ ...p, balance: 0 })), selected: action.opponents[0].id } : state;
   if (action.type === 'input') return { ...state, [action.field]: action.value, error: '' };
-  if (action.type === 'select') return IDLE_PHASES.includes(state.phase) ? { ...state, selected: action.id, error: '' } : state;
   if (action.type === 'undo') {
     const previous = state.history.at(-1);
-    return previous ? { ...previous, history: state.history.slice(0, -1), error: '', resultFlash: null, round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null } : state;
+    if (!previous) return state;
+    const current: Snapshot = { started: state.started, opponents: state.opponents, selected: state.selected, bet: state.bet, deposit: state.deposit, message: state.message };
+    const gameOver = state.limitAmount !== null && positiveAfterSplitSum(previous.opponents) >= state.limitAmount;
+    return { ...previous, history: state.history.slice(0, -1), future: [...state.future, current], error: '', resultFlash: null, round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, limit: state.limit, limitAmount: state.limitAmount, gameOver, opponentName: state.opponentName, streak: false };
+  }
+  if (action.type === 'redo') {
+    const next = state.future.at(-1);
+    if (!next) return state;
+    const current: Snapshot = { started: state.started, opponents: state.opponents, selected: state.selected, bet: state.bet, deposit: state.deposit, message: state.message };
+    const gameOver = state.limitAmount !== null && positiveAfterSplitSum(next.opponents) >= state.limitAmount;
+    return { ...next, history: [...state.history, current], future: state.future.slice(0, -1), error: '', resultFlash: null, round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, limit: state.limit, limitAmount: state.limitAmount, gameOver, opponentName: state.opponentName, streak: false };
   }
   if (action.type === 'clearFlash') return state.resultFlash ? { ...state, resultFlash: null } : state;
+  if (action.type === 'setLimit') {
+    const amount = parseMoney(state.limit);
+    if (amount === null || amount <= 0) return { ...state, error: 'Enter a positive limit amount.' };
+    const reachedLimit = positiveAfterSplitSum(state.opponents) >= amount;
+    return { ...state, limitAmount: amount, error: '', gameOver: reachedLimit, message: reachedLimit ? `Game over — the ${amount / 100} limit was already reached. See the settlement preview for the final payout.` : state.message };
+  }
+  if (action.type === 'clearLimit') return { ...state, limitAmount: null, limit: '', error: '', gameOver: false };
   if (!state.started) return state;
+
+  if (state.gameOver && ['deposit', 'split', 'deal', 'placeBet', 'pass', 'revealThird', 'resolve'].includes(action.type)) {
+    return { ...state, error: 'Game over — the money limit was reached. Undo or raise the limit to keep playing.' };
+  }
 
   const { started, opponents, selected, bet: betInput, deposit, message }: Snapshot = state;
   const snapshot: Snapshot = { started, opponents, selected, bet: betInput, deposit, message };
   const commit = (nextOpponents: Opponent[], nextMessage: string) => {
     if (!nextOpponents.every(p => Number.isSafeInteger(p.balance)) || !Number.isSafeInteger(nextOpponents.reduce((sum, p) => sum + Math.abs(p.balance), 0))) return { ...state, error: 'This amount is too large. Enter a smaller amount.' };
-    return { ...state, opponents: nextOpponents, message: nextMessage, error: '', history: [...state.history, snapshot] };
+    const reachedLimit = state.limitAmount !== null && positiveAfterSplitSum(nextOpponents) >= state.limitAmount;
+    return {
+      ...state,
+      opponents: nextOpponents,
+      message: reachedLimit ? `Game over — the ${state.limitAmount! / 100} limit was reached. See the settlement preview for the final payout.` : nextMessage,
+      error: '',
+      history: [...state.history, snapshot],
+      future: [],
+      gameOver: state.gameOver || reachedLimit,
+    };
   };
 
+  if (action.type === 'addOpponent') {
+    const pool = poolOf(state.opponents);
+    if (pool !== 0) return { ...state, error: 'You can only add a player while the pool is empty, right before a deposit.' };
+    const clean = state.opponentName.trim();
+    if (!clean) return { ...state, error: 'Enter the new player’s name.' };
+    if (state.opponents.some(p => p.name.toLowerCase() === clean.toLowerCase())) return { ...state, error: 'That name is already at the table.' };
+    const newOpponent: Opponent = { id: crypto.randomUUID(), name: clean, balance: 0 };
+    return { ...commit([...state.opponents, newOpponent], `${clean} joined the table.`), opponentName: '', selected: state.selected || newOpponent.id };
+  }
   if (action.type === 'deposit') {
     if (!IDLE_PHASES.includes(state.phase)) return { ...state, error: 'Finish the current round before collecting a deposit.' };
     const amount = parseMoney(state.deposit);
@@ -157,7 +234,7 @@ export function reducer(state: State, action: Action): State {
   if (action.type === 'revealFirst') return state.phase === 'dealing' ? { ...state, revealed1: true } : state;
   if (action.type === 'revealSecond') {
     if (state.phase !== 'dealing' || !state.round) return state;
-    return { ...state, revealed2: true, phase: state.round.dead ? 'dead' : 'ready' };
+    return { ...state, revealed2: true, phase: 'ready' };
   }
   if (action.type === 'placeBet') {
     if (state.phase !== 'ready') return state;
@@ -168,7 +245,7 @@ export function reducer(state: State, action: Action): State {
   }
   if (action.type === 'pass') {
     if (state.phase !== 'ready') return state;
-    return { ...state, phase: 'select', round: null, revealed1: false, revealed2: false, revealed3: false, bet: '', activeBet: null, error: '', message: 'Passed — no money changed hands.', resultFlash: null };
+    return { ...state, phase: 'select', round: null, revealed1: false, revealed2: false, revealed3: false, bet: '', activeBet: null, error: '', message: 'Passed — no money changed hands.', resultFlash: null, selected: nextOpponentId(state.opponents, state.selected), streak: false };
   }
   if (action.type === 'revealThird') return state.phase === 'placed' ? { ...state, phase: 'revealing' } : state;
   if (action.type === 'resolve') {
@@ -177,9 +254,28 @@ export function reducer(state: State, action: Action): State {
     if (!player) return state;
     const win = isWin(state.round);
     const bet = state.activeBet;
-    const next = commit(state.opponents.map(p => p.id === player.id ? { ...p, balance: p.balance + (win ? bet : -bet) } : p), `${player.name} ${win ? 'won' : 'lost'} ${bet / 100}.`);
+    const currentPool = poolOf(state.opponents);
+
+    if (state.streak && win) {
+      const payout = currentPool;
+      const next = commit(state.opponents.map(p => p.id === player.id ? { ...p, balance: p.balance + payout } : p), `${player.name} won again and swept the whole pool!`);
+      if (next.error) return { ...next, revealed3: true, phase: 'result' };
+      return { ...next, revealed3: true, phase: 'result', selected: player.id, streak: true, resultFlash: { token: Date.now() + Math.random(), outcome: 'win', playerName: player.name, amount: payout } };
+    }
+    if (state.streak) {
+      const next = commit(state.opponents.map(p => p.id === player.id ? { ...p, balance: p.balance - bet } : p), `${player.name} lost ${bet / 100} — the streak ends.`);
+      if (next.error) return { ...next, revealed3: true, phase: 'result' };
+      return { ...next, revealed3: true, phase: 'result', selected: nextOpponentId(state.opponents, player.id), streak: false, resultFlash: { token: Date.now() + Math.random(), outcome: 'lose', playerName: player.name, amount: bet } };
+    }
+
+    const wonWholePool = win && bet === currentPool;
+    const upNext = wonWholePool ? player.id : nextOpponentId(state.opponents, player.id);
+    const next = commit(state.opponents.map(p => p.id === player.id ? { ...p, balance: p.balance + (win ? bet : -bet) } : p), `${player.name} ${win ? 'won' : 'lost'} ${bet / 100}.${wonWholePool ? ` ${player.name} swept the pool and plays again — any win now takes the whole pool!` : ''}`);
     if (next.error) return { ...next, revealed3: true, phase: 'result' };
-    return { ...next, revealed3: true, phase: 'result', resultFlash: { token: Date.now() + Math.random(), outcome: win ? 'win' : 'lose', playerName: player.name, amount: bet } };
+    return { ...next, revealed3: true, phase: 'result', selected: upNext, streak: wonWholePool, resultFlash: { token: Date.now() + Math.random(), outcome: win ? 'win' : 'lose', playerName: player.name, amount: bet } };
+  }
+  if (action.type === 'next') {
+    return state.phase === 'result' ? { ...state, phase: 'select', round: null, revealed1: false, revealed2: false, revealed3: false, bet: '', activeBet: null, error: '' } : state;
   }
   return state;
 }

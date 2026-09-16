@@ -675,16 +675,13 @@ body {
   padding: 0.65rem 0.8rem;
   text-align: left;
   color: var(--cream);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.player-row:hover {
-  border-color: rgba(224, 184, 75, 0.5);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .player-row.selected {
   border-color: var(--gold);
   background: rgba(224, 184, 75, 0.12);
+  box-shadow: 0 0 0 1px rgba(224, 184, 75, 0.3);
 }
 
 .player-name {
@@ -695,7 +692,10 @@ body {
 }
 
 .player-name small {
-  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
   font-size: 0.72rem;
   color: var(--gold-bright);
 }
@@ -729,12 +729,29 @@ body {
   font-size: 1.1rem;
 }
 
+.add-opponent {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--line);
+}
+
+.add-opponent input:disabled {
+  opacity: 0.5;
+}
+
 /* ---- Table column: pool / deposit / play ---- */
 
 .table-column {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.status-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
 .pool-card {
@@ -802,12 +819,44 @@ body {
   color: rgba(246, 240, 226, 0.5);
 }
 
-.deposit-panel {
+.limit-panel form {
+  margin-top: 0.75rem;
+}
+
+.limit-panel.limit-reached {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 24px rgba(224, 184, 75, 0.18);
+}
+
+.limit-progress {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.limit-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.limit-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--win), var(--gold-bright));
+  transition: width 0.4s ease;
+}
+
+.limit-progress span {
+  font-size: 0.8rem;
+  color: rgba(246, 240, 226, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.limit-panel .undo-button {
+  margin-top: 0.5rem;
 }
 
 .deposit-panel h2 {
@@ -816,8 +865,7 @@ body {
 }
 
 .deposit-panel form {
-  flex: 1;
-  min-width: 240px;
+  margin-top: 0.75rem;
 }
 
 .deposit-panel.deposit-required {
@@ -914,6 +962,11 @@ body {
   margin: 0;
   font-size: 0.85rem;
   color: rgba(246, 240, 226, 0.65);
+}
+
+.btc-history-actions {
+  display: flex;
+  gap: 0.6rem;
 }
 
 .undo-button {
@@ -1155,6 +1208,81 @@ body {
   border-top: 1px solid var(--line);
 }
 
+.settlement-panel.settlement-final {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 30px rgba(224, 184, 75, 0.2);
+}
+
+.settlement-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.settlement-badge.win {
+  background: rgba(63, 174, 106, 0.18);
+  color: var(--win);
+}
+
+.settlement-badge.lose {
+  background: rgba(217, 79, 79, 0.18);
+  color: var(--lose);
+}
+
+.settlement-badge.even {
+  background: rgba(246, 240, 226, 0.12);
+  color: rgba(246, 240, 226, 0.6);
+}
+
+/* ---- Play panel: game over ---- */
+
+.btc-gameover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 2.25rem 1.5rem;
+  color: var(--gold-bright);
+  border: 1px dashed var(--gold);
+  border-radius: 14px;
+}
+
+.btc-gameover h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: var(--cream);
+}
+
+.btc-gameover p {
+  max-width: 32rem;
+}
+
+.btc-streak {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(217, 79, 79, 0.15), rgba(224, 184, 75, 0.15));
+  border: 1px solid rgba(224, 184, 75, 0.4);
+  color: var(--gold-bright);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-align: center;
+  animation: streak-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes streak-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 184, 75, 0.25); }
+  50% { box-shadow: 0 0 16px 2px rgba(224, 184, 75, 0.3); }
+}
+
 /* ==================== BETWEEN THE CARDS ==================== */
 
 .btc-shell {
@@ -1249,6 +1377,47 @@ body {
   text-align: center;
 }
 
+.btc-dealer-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.25rem;
+  flex-wrap: wrap;
+}
+
+/* ---- The deck (52 cards) ---- */
+
+.btc-deck {
+  position: relative;
+  width: 72px;
+  height: 100px;
+  flex-shrink: 0;
+  margin-bottom: 0.9rem;
+}
+
+.btc-deck-card {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: repeating-linear-gradient(45deg, var(--gold) 0 6px, #7a5a1e 6px 12px);
+  border: 2px solid var(--gold-bright);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  transform:
+    translate(calc(var(--i) * 1.4px), calc(var(--i) * -1.6px))
+    rotate(calc(var(--i) * 1.4deg - 4deg));
+}
+
+.btc-deck-count {
+  position: absolute;
+  left: 50%;
+  bottom: -1.5rem;
+  transform: translateX(-50%);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  color: rgba(246, 240, 226, 0.45);
+  white-space: nowrap;
+}
+
 .btc-pair {
   display: flex;
   flex-direction: column;
@@ -1297,6 +1466,34 @@ body {
 
 .btc-card-sm {
   width: 98px;
+}
+
+.btc-card-parked {
+  visibility: hidden;
+}
+
+@keyframes deal-fly {
+  0% { transform: translate(-150px, -8px) rotate(-16deg) scale(0.8); opacity: 0; }
+  55% { opacity: 1; }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+}
+
+@keyframes deal-fly-third {
+  0% { transform: translate(-130px, -75px) rotate(-20deg) scale(0.75); opacity: 0; }
+  55% { opacity: 1; }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+}
+
+.btc-deal-1 {
+  animation: deal-fly 0.5s cubic-bezier(0.16, 0.9, 0.3, 1) both;
+}
+
+.btc-deal-2 {
+  animation: deal-fly 0.5s cubic-bezier(0.16, 0.9, 0.3, 1) 0.28s both;
+}
+
+.btc-deal-3 {
+  animation: deal-fly-third 0.5s cubic-bezier(0.16, 0.9, 0.3, 1) both;
 }
 
 .btc-card-ratio {
@@ -1526,6 +1723,10 @@ body {
   .setup-art {
     order: -1;
   }
+
+  .status-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1567,6 +1768,10 @@ body {
 
   .undo-button {
     justify-content: center;
+  }
+
+  .btc-history-actions {
+    flex-direction: column;
   }
 
   .result-flash-card {
@@ -1626,5 +1831,32 @@ body {
 
   .btc-bet-actions {
     flex-direction: column;
+  }
+
+  .btc-dealer-area {
+    gap: 1.1rem;
+  }
+
+  .btc-deck {
+    width: 50px;
+    height: 70px;
+    margin-bottom: 0.6rem;
+  }
+
+  .btc-deck-count {
+    font-size: 0.58rem;
+    bottom: -1.2rem;
+  }
+
+  @keyframes deal-fly {
+    0% { transform: translate(-90px, -6px) rotate(-14deg) scale(0.8); opacity: 0; }
+    55% { opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  }
+
+  @keyframes deal-fly-third {
+    0% { transform: translate(-80px, -50px) rotate(-18deg) scale(0.75); opacity: 0; }
+    55% { opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
   }
 }
