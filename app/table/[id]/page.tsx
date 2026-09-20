@@ -20,5 +20,8 @@ export default async function TablePage({ params }: { params: Promise<{ id: stri
   // the lobby rather than a bare 404.
   if (!session) redirect('/lobby');
 
+  // A finished game has no table page any more.
+  if (session.status === 'ended') redirect('/lobby');
+
   return <TableClient sessionId={session.id} userId={user.id} initialState={session.state as State} initialStatus={session.status} />;
 }

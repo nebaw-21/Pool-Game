@@ -10,8 +10,8 @@ A casino-themed betting game built with Next.js (App Router) and Supabase. Regis
 ## Supabase setup
 
 1. Create a project at [supabase.com](https://supabase.com/dashboard).
-2. In the SQL editor, run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). This creates the `profiles`, `invitations`, `game_sessions`, and `session_participants` tables, their Row Level Security policies, and enables Realtime on `game_sessions` and `invitations`.
-3. If the last two `alter publication` statements in that file fail because your project doesn't have a `supabase_realtime` publication yet, enable Realtime for `game_sessions` and `invitations` from **Database → Replication** in the dashboard instead.
+2. In the SQL editor, run each file in [`supabase/migrations/`](supabase/migrations) **in order**: `0001_init.sql` (tables, RLS, Realtime), then `0002_multiplayer.sql` (multi-invite batches, N-player sessions), then `0003_fix_rls_recursion.sql` (fixes recursive RLS policies from 0002).
+3. If an `alter publication` statement in those files fails because your project doesn't have a `supabase_realtime` publication yet, enable Realtime for `game_sessions`, `invitations`, and `invite_batches` from **Database → Replication** in the dashboard instead.
 4. Under **Project Settings → API**, copy the Project URL, `anon` public key, and `service_role` secret key.
 5. Copy [`.env.local.example`](.env.local.example) to `.env.local` and fill in those three values.
 6. (Optional) Under **Authentication → Providers → Email**, decide whether to require email confirmation before sign-in.

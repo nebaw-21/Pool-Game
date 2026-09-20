@@ -34,6 +34,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   const router = useRouter();
   const [state, setState] = useState<State>(initialState);
   const [status, setStatus] = useState(initialStatus);
+  const [removed, setRemoved] = useState(false);
   const [betText, setBetText] = useState('');
   const [depositText, setDepositText] = useState('');
   const [limitText, setLimitText] = useState('');
@@ -54,7 +55,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   const iRequestedLeave = state.leaveRequest?.by === userId;
   const theyRequestedLeave = state.leaveRequest !== null && state.leaveRequest.by !== userId;
   const leavingPlayer = state.leaveRequest ? state.opponents.find(p => p.id === state.leaveRequest!.by) : undefined;
-  const iAmStillSeated = state.opponents.some(p => p.id === userId);
+  const iAmStillSeated = !removed && state.opponents.some(p => p.id === userId);
 
   async function sendAction(action: Action) {
     const res = await fetch('/api/game-action', {
@@ -82,8 +83,12 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
     let cancelled = false;
 
     const refetch = async () => {
-      const { data } = await supabase.from('game_sessions').select('state, status').eq('id', sessionId).maybeSingle();
-      if (!cancelled && data) { setState(data.state as State); setStatus(data.status); }
+      const { data, error } = await supabase.from('game_sessions').select('state, status').eq('id', sessionId).maybeSingle();
+      if (cancelled) return;
+      if (data) { setState(data.state as State); setStatus(data.status); }
+      // No row and no error means RLS now hides this session from us: we were
+      // removed from it (e.g. the host approved our request to leave).
+      else if (!error) setRemoved(true);
     };
 
     const channel = supabase
