@@ -134,7 +134,7 @@ export function parseMoney(value: string): number | null {
   return Number.isSafeInteger(cents) ? cents : null;
 }
 
-type Action =
+export type Action =
   | { type: 'start'; opponents: Opponent[] }
   | { type: 'input'; field: 'bet' | 'deposit' | 'limit' | 'opponentName'; value: string }
   | { type: 'addOpponent' }
