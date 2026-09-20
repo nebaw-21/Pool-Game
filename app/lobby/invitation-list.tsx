@@ -14,6 +14,12 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
   const [responding, setResponding] = useState<string | null>(null);
   const [error, setError] = useState('');
 
+  // Realtime is the fast path, but WebSocket delivery isn't guaranteed the
+  // instant it happens (subscription not fully established yet, a
+  // backgrounded tab throttling the socket, or Realtime simply not enabled
+  // for a table in the Supabase project). Refresh on subscribe-confirmed, on
+  // tab focus, and on a short poll so a new invite always shows up promptly
+  // even if a specific postgres_changes event is missed.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -25,8 +31,21 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
       // stale "Join table" link without needing a manual reload.
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player1_id=eq.${userId}` }, () => router.refresh())
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player2_id=eq.${userId}` }, () => router.refresh())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') router.refresh();
+      });
+
+    const onFocus = () => router.refresh();
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
+    const poll = setInterval(() => router.refresh(), 4000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
   }, [userId, router]);
 
   const respond = async (invitationId: string, accept: boolean) => {
