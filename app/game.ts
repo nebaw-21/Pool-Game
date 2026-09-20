@@ -81,8 +81,6 @@ export type Phase = 'select' | 'dealing' | 'ready' | 'placed' | 'revealing' | 'r
 const IDLE_PHASES: Phase[] = ['select', 'result'];
 
 export type State = Snapshot & {
-  history: Snapshot[];
-  future: Snapshot[];
   error: string;
   resultFlash: ResultFlash | null;
   round: Round | null;
@@ -96,16 +94,16 @@ export type State = Snapshot & {
   gameOver: boolean;
   opponentName: string;
   streak: boolean;
-  endProposal: { by: string } | null;
+  leaveRequest: { by: string } | null;
   sessionEnded: boolean;
 };
 
 export const initialState: State = {
   started: false, opponents: [], selected: '', bet: '', deposit: '', message: '',
-  history: [], future: [], error: '', resultFlash: null,
+  error: '', resultFlash: null,
   round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null,
   limit: '', limitAmount: null, gameOver: false, opponentName: '', streak: false,
-  endProposal: null, sessionEnded: false,
+  leaveRequest: null, sessionEnded: false,
 };
 
 export const poolOf = (opponents: Opponent[]) => -opponents.reduce((sum, p) => sum + p.balance, 0) || 0;
@@ -153,29 +151,13 @@ export type Action =
   | { type: 'revealThird' }
   | { type: 'resolve' }
   | { type: 'next' }
-  | { type: 'undo' }
-  | { type: 'redo' }
   | { type: 'clearFlash' }
-  | { type: 'proposeEnd'; by: string }
-  | { type: 'respondEnd'; accept: boolean };
+  | { type: 'requestLeave'; by: string }
+  | { type: 'respondLeave'; accept: boolean };
 
 export function reducer(state: State, action: Action): State {
   if (action.type === 'start') return action.opponents.length ? { ...initialState, started: true, opponents: action.opponents.map(p => ({ ...p, balance: 0 })), selected: action.opponents[0].id } : state;
   if (action.type === 'input') return { ...state, [action.field]: action.value, error: '' };
-  if (action.type === 'undo') {
-    const previous = state.history.at(-1);
-    if (!previous) return state;
-    const current: Snapshot = { started: state.started, opponents: state.opponents, selected: state.selected, bet: state.bet, deposit: state.deposit, message: state.message };
-    const gameOver = state.limitAmount !== null && positiveAfterSplitSum(previous.opponents) >= state.limitAmount;
-    return { ...previous, history: state.history.slice(0, -1), future: [...state.future, current], error: '', resultFlash: null, round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, limit: state.limit, limitAmount: state.limitAmount, gameOver, opponentName: state.opponentName, streak: false, endProposal: null, sessionEnded: false };
-  }
-  if (action.type === 'redo') {
-    const next = state.future.at(-1);
-    if (!next) return state;
-    const current: Snapshot = { started: state.started, opponents: state.opponents, selected: state.selected, bet: state.bet, deposit: state.deposit, message: state.message };
-    const gameOver = state.limitAmount !== null && positiveAfterSplitSum(next.opponents) >= state.limitAmount;
-    return { ...next, history: [...state.history, current], future: state.future.slice(0, -1), error: '', resultFlash: null, round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, limit: state.limit, limitAmount: state.limitAmount, gameOver, opponentName: state.opponentName, streak: false, endProposal: null, sessionEnded: false };
-  }
   if (action.type === 'clearFlash') return state.resultFlash ? { ...state, resultFlash: null } : state;
   if (action.type === 'setLimit') {
     const amount = parseMoney(state.limit);
@@ -186,24 +168,22 @@ export function reducer(state: State, action: Action): State {
   if (action.type === 'clearLimit') return { ...state, limitAmount: null, limit: '', error: '', gameOver: false };
   if (!state.started) return state;
 
-  if (action.type === 'proposeEnd') {
+  if (action.type === 'requestLeave') {
     if (state.sessionEnded) return state;
-    if (state.endProposal) return { ...state, error: 'There is already a pending request to end the game.' };
-    const proposer = state.opponents.find(p => p.id === action.by);
-    return { ...state, endProposal: { by: action.by }, error: '', message: `${proposer?.name ?? 'A player'} proposed ending the game. Waiting for a response.` };
+    if (state.leaveRequest) return { ...state, error: 'There is already a pending request to leave.' };
+    const requester = state.opponents.find(p => p.id === action.by);
+    return { ...state, leaveRequest: { by: action.by }, error: '', message: `${requester?.name ?? 'A player'} asked to leave the game. Waiting for the host to respond.` };
   }
-  if (action.type === 'respondEnd') {
-    if (!state.endProposal) return state;
-    if (!action.accept) return { ...state, endProposal: null, error: '', message: 'The request to end the game was declined.' };
-    return { ...state, endProposal: null, sessionEnded: true, error: '', message: 'Both players agreed to end the game. This session is now closed.' };
+  if (action.type === 'respondLeave') {
+    if (!state.leaveRequest) return state;
+    if (!action.accept) return { ...state, leaveRequest: null, error: '', message: 'The request to leave was declined.' };
+    return { ...state, leaveRequest: null, sessionEnded: true, error: '', message: 'The host approved the request to leave. This session is now closed.' };
   }
 
   if (state.gameOver && ['deposit', 'split', 'deal', 'placeBet', 'pass', 'revealThird', 'resolve'].includes(action.type)) {
-    return { ...state, error: 'Game over — the money limit was reached. Undo or raise the limit to keep playing.' };
+    return { ...state, error: 'Game over — the money limit was reached. Raise or remove the limit to keep playing.' };
   }
 
-  const { started, opponents, selected, bet: betInput, deposit, message }: Snapshot = state;
-  const snapshot: Snapshot = { started, opponents, selected, bet: betInput, deposit, message };
   const commit = (nextOpponents: Opponent[], nextMessage: string) => {
     if (!nextOpponents.every(p => Number.isSafeInteger(p.balance)) || !Number.isSafeInteger(nextOpponents.reduce((sum, p) => sum + Math.abs(p.balance), 0))) return { ...state, error: 'This amount is too large. Enter a smaller amount.' };
     const reachedLimit = state.limitAmount !== null && positiveAfterSplitSum(nextOpponents) >= state.limitAmount;
@@ -212,8 +192,6 @@ export function reducer(state: State, action: Action): State {
       opponents: nextOpponents,
       message: reachedLimit ? `Game over — the ${state.limitAmount! / 100} limit was reached. See the settlement preview for the final payout.` : nextMessage,
       error: '',
-      history: [...state.history, snapshot],
-      future: [],
       gameOver: state.gameOver || reachedLimit,
     };
   };

@@ -999,11 +999,6 @@ body {
   color: rgba(246, 240, 226, 0.65);
 }
 
-.btc-history-actions {
-  display: flex;
-  gap: 0.6rem;
-}
-
 .btc-end-game {
   display: flex;
   align-items: center;
@@ -1780,6 +1775,20 @@ body {
   .status-row {
     grid-template-columns: 1fr;
   }
+
+  /* Next move sits right under the pool, ahead of the session cap / bet
+     deposit controls, once the layout stacks to a single column. */
+  .pool-card {
+    order: 0;
+  }
+
+  .play-panel {
+    order: 1;
+  }
+
+  .status-row {
+    order: 2;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1823,8 +1832,9 @@ body {
     justify-content: center;
   }
 
-  .btc-history-actions {
+  .btc-end-game {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .result-flash-card {

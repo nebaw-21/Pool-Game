@@ -6,6 +6,10 @@ import { reducer, type Action, type State } from '@/app/game';
 // Actions a player may only take when it's their turn (state.selected === them).
 const TURN_GATED_ACTIONS = new Set<Action['type']>(['deal', 'placeBet', 'pass']);
 
+// Only the player who sent the invitation (session.player1_id) configures the
+// table's stakes.
+const INVITER_ONLY_ACTIONS = new Set<Action['type']>(['deposit', 'setLimit', 'clearLimit']);
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -33,21 +37,26 @@ export async function POST(request: Request) {
   if (TURN_GATED_ACTIONS.has(body.action.type) && state.selected !== user.id) {
     return NextResponse.json({ error: 'It’s not your turn.' }, { status: 409 });
   }
+  if (INVITER_ONLY_ACTIONS.has(body.action.type) && user.id !== session.player1_id) {
+    return NextResponse.json({ error: 'Only the player who sent the invite can set the deposit or the money limit.' }, { status: 403 });
+  }
 
   // Actions with no server-authoritative meaning in the two-player flow.
   if (body.action.type === 'start' || body.action.type === 'addOpponent') {
     return NextResponse.json({ error: 'This action isn’t available online.' }, { status: 400 });
   }
 
-  // The proposer's identity is derived from their session, never trusted from
-  // the client, and only the OTHER participant may accept/decline.
+  // The requester's identity is derived from their session, never trusted
+  // from the client. Only the invitee may ask to leave, and only the inviter
+  // (the host) may approve or decline that request.
   let action: Action = body.action;
-  if (action.type === 'proposeEnd') {
-    action = { type: 'proposeEnd', by: user.id };
+  if (action.type === 'requestLeave') {
+    if (user.id !== session.player2_id) return NextResponse.json({ error: 'Only the invited player can ask to leave.' }, { status: 403 });
+    action = { type: 'requestLeave', by: user.id };
   }
-  if (action.type === 'respondEnd') {
-    if (!state.endProposal) return NextResponse.json({ error: 'There’s no pending request to respond to.' }, { status: 409 });
-    if (state.endProposal.by === user.id) return NextResponse.json({ error: 'Only the other player can respond to your own request.' }, { status: 403 });
+  if (action.type === 'respondLeave') {
+    if (user.id !== session.player1_id) return NextResponse.json({ error: 'Only the host can respond to a request to leave.' }, { status: 403 });
+    if (!state.leaveRequest) return NextResponse.json({ error: 'There’s no pending request to respond to.' }, { status: 409 });
   }
 
   const nextState = reducer(state, action);
