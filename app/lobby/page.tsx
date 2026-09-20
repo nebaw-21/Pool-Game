@@ -16,36 +16,43 @@ export default async function LobbyPage() {
   const [{ data: incomingRaw }, { data: outgoingRaw }] = await Promise.all([
     supabase
       .from('invitations')
-      .select('id, status, deposit_amount_cents, limit_amount_cents, created_at, session_id, inviter:profiles!invitations_inviter_id_fkey(username)')
+      .select('id, status, batch:invite_batches(id, deposit_amount_cents, limit_amount_cents, session_id, inviter:profiles(username), session:game_sessions!invite_batches_session_id_fkey(status))')
       .eq('invitee_id', user.id)
-      .eq('status', 'pending')
+      .neq('status', 'declined')
       .order('created_at', { ascending: false }),
     supabase
-      .from('invitations')
-      .select('id, status, deposit_amount_cents, limit_amount_cents, created_at, session_id, invitee:profiles!invitations_invitee_id_fkey(username), session:game_sessions!invitations_session_id_fkey(status)')
+      .from('invite_batches')
+      .select('id, deposit_amount_cents, limit_amount_cents, session_id, created_at, invitations(status, invitee:profiles(username)), session:game_sessions!invite_batches_session_id_fkey(status)')
       .eq('inviter_id', user.id)
-      .in('status', ['pending', 'accepted'])
+      .in('status', ['pending', 'started'])
       .order('created_at', { ascending: false }),
   ]);
 
-  const incoming = (incomingRaw ?? []).map(row => ({
-    id: row.id,
-    depositCents: row.deposit_amount_cents,
-    limitCents: row.limit_amount_cents,
-    otherUsername: (row.inviter as unknown as { username: string } | null)?.username ?? 'Unknown',
-  }));
-  const outgoing = (outgoingRaw ?? [])
-    // An accepted invite whose session has ended (either side proposed and
-    // both agreed, or it was otherwise closed) is no longer actionable —
-    // drop it instead of leaving a dead "Join table" link in the lobby.
-    .filter(row => (row.session as unknown as { status: string } | null)?.status !== 'ended')
+  type BatchEmbed = { id: string; deposit_amount_cents: number; limit_amount_cents: number | null; session_id: string | null; inviter: { username: string } | null; session: { status: string } | null };
+
+  const incoming = (incomingRaw ?? [])
+    .map(row => ({ id: row.id, status: row.status, batch: row.batch as unknown as BatchEmbed | null }))
+    .filter(row => row.batch && row.batch.session?.status !== 'ended')
     .map(row => ({
       id: row.id,
-      status: row.status,
-      sessionId: row.session_id as string | null,
-      depositCents: row.deposit_amount_cents,
-      limitCents: row.limit_amount_cents,
-      otherUsername: (row.invitee as unknown as { username: string } | null)?.username ?? 'Unknown',
+      depositCents: row.batch!.deposit_amount_cents,
+      limitCents: row.batch!.limit_amount_cents,
+      otherUsername: row.batch!.inviter?.username ?? 'Unknown',
+      accepted: row.status === 'accepted',
+      sessionId: row.batch!.session_id,
+    }));
+
+  const outgoing = (outgoingRaw ?? [])
+    .filter(batch => (batch.session as unknown as { status: string } | null)?.status !== 'ended')
+    .map(batch => ({
+      id: batch.id,
+      sessionId: batch.session_id as string | null,
+      depositCents: batch.deposit_amount_cents,
+      limitCents: batch.limit_amount_cents,
+      invitees: (batch.invitations as unknown as { status: string; invitee: { username: string } | null }[]).map(i => ({
+        username: i.invitee?.username ?? 'Unknown',
+        status: i.status,
+      })),
     }));
 
   return (
@@ -57,7 +64,7 @@ export default async function LobbyPage() {
         <SignOutButton />
       </header>
       <main>
-        <div className="page-heading"><div><p className="eyebrow">YOUR LOBBY</p><h1>Invite someone to play.</h1><p className="muted">Set the deposit and the money limit, then send the invite. The game starts once they accept.</p></div></div>
+        <div className="page-heading"><div><p className="eyebrow">YOUR LOBBY</p><h1>Invite someone to play.</h1><p className="muted">Set the deposit and the money limit, then send the invite(s). The game starts once everyone invited has responded.</p></div></div>
         <div className="setup-grid">
           <InviteForm />
           <InvitationList userId={user.id} initialIncoming={incoming} initialOutgoing={outgoing} />

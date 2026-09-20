@@ -1,4 +1,4 @@
-import { redirect, notFound } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { State } from '@/app/game';
 import TableClient from './table-client';
@@ -11,12 +11,14 @@ export default async function TablePage({ params }: { params: Promise<{ id: stri
 
   const { data: session } = await supabase
     .from('game_sessions')
-    .select('id, player1_id, player2_id, state, status')
+    .select('id, state, status')
     .eq('id', id)
     .maybeSingle();
 
-  if (!session) return notFound();
-  if (user.id !== session.player1_id && user.id !== session.player2_id) return notFound();
+  // RLS hides this row once you're no longer a participant (e.g. you left
+  // the game, or it never existed / wasn't yours) -- either way, back to
+  // the lobby rather than a bare 404.
+  if (!session) redirect('/lobby');
 
   return <TableClient sessionId={session.id} userId={user.id} initialState={session.state as State} initialStatus={session.status} />;
 }

@@ -43,16 +43,18 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   const pool = poolOf(state.opponents), needsDeposit = pool === 0;
   const bet = parseMoney(betText), deposit = parseMoney(depositText);
   const player = state.opponents.find(p => p.id === state.selected);
-  const opponent = state.opponents.find(p => p.id !== userId);
   const myTurn = state.selected === userId;
   const canPlaceBet = phase === 'ready' && myTurn && bet !== null && bet > 0 && bet <= pool;
   const shares = evenShares(pool, state.opponents.length);
   const limitInput = parseMoney(limitText);
   const progress = positiveAfterSplitSum(state.opponents);
   // The inviter (host) is always seated first — see respond-to-invitation.
-  const isInviter = state.opponents[0]?.id === userId;
+  const host = state.opponents[0];
+  const isInviter = host?.id === userId;
   const iRequestedLeave = state.leaveRequest?.by === userId;
   const theyRequestedLeave = state.leaveRequest !== null && state.leaveRequest.by !== userId;
+  const leavingPlayer = state.leaveRequest ? state.opponents.find(p => p.id === state.leaveRequest!.by) : undefined;
+  const iAmStillSeated = state.opponents.some(p => p.id === userId);
 
   async function sendAction(action: Action) {
     const res = await fetch('/api/game-action', {
@@ -139,19 +141,19 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   }, [state.gameOver]);
 
   useEffect(() => {
-    if (status !== 'ended') return;
+    if (status !== 'ended' && iAmStillSeated) return;
     const t = setTimeout(() => { router.push('/lobby'); router.refresh(); }, 2200);
     return () => clearTimeout(t);
-  }, [status, router]);
+  }, [status, iAmStillSeated, router]);
 
-  if (status === 'ended') {
+  if (status === 'ended' || !iAmStillSeated) {
     return <div className="app-shell">
       <header className="topbar"><Link href="/lobby" className="brand"><Spade size={25} fill="currentColor" /> POOLROOM<span>.</span></Link></header>
       <main>
         <section className="panel setup-panel" style={{ maxWidth: 420, margin: '40px auto', textAlign: 'center' }}>
           <DoorOpen className="gold" size={40} style={{ margin: '0 auto 12px' }} />
-          <h2>Game ended</h2>
-          <p className="muted small">The host approved a request to leave, so this session is now closed. Taking you back to the lobby…</p>
+          <h2>{iAmStillSeated ? 'Game ended' : 'You left the game'}</h2>
+          <p className="muted small">{iAmStillSeated ? 'This game session is now closed.' : 'The host approved your request to leave this game.'} Taking you back to the lobby…</p>
         </section>
       </main>
     </div>;
@@ -203,7 +205,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
                       <div className="input-row"><input id="limit" inputMode="decimal" value={limitText} placeholder="e.g. 1000" onChange={e => setLimitText(e.target.value)} /><button className="gold-button" disabled={limitInput === null || limitInput <= 0}><Flag size={16} /> Set Limit</button></div>
                     </form>
                   </>
-                  : <p className="muted small"><Lock size={13} /> No money limit has been set. Only {opponent?.name ?? 'the host'} can set one.</p>
+                  : <p className="muted small"><Lock size={13} /> No money limit has been set. Only {host?.name ?? 'the host'} can set one.</p>
                 : <>
                   <div className="limit-progress">
                     <div className="limit-progress-bar"><div className="limit-progress-fill" style={{ width: `${Math.min(100, (progress / state.limitAmount) * 100)}%` }} /></div>
@@ -214,7 +216,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
                     : <p className="muted small">The table will lock once winnings after a split reach {money(state.limitAmount)}.</p>}
                   {isInviter
                     ? <button className="undo-button" onClick={() => sendAction({ type: 'clearLimit' })}><X size={15} /> Remove limit</button>
-                    : <p className="muted small"><Lock size={13} /> Only {opponent?.name ?? 'the host'} can remove the limit.</p>}
+                    : <p className="muted small"><Lock size={13} /> Only {host?.name ?? 'the host'} can remove the limit.</p>}
                 </>}
             </section>
             <section className={`panel deposit-panel ${needsDeposit ? 'deposit-required' : ''}`}>
@@ -224,7 +226,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
                   <label className="sr-only" htmlFor="deposit">Bet Deposit per opponent</label>
                   <div className="input-row"><input id="deposit" inputMode="decimal" value={depositText} placeholder="Amount per player" onChange={e => setDepositText(e.target.value)} /><button className="gold-button" disabled={deposit === null || deposit <= 0}><Coins size={17} />Add</button></div>
                 </form>
-                : <p className="muted small"><Lock size={13} /> Only {opponent?.name ?? 'the host'}, who sent the invite, can collect a deposit.</p>}
+                : <p className="muted small"><Lock size={13} /> Only {host?.name ?? 'the host'}, who sent the invite, can collect a deposit.</p>}
             </section>
           </div>
           <section className="panel play-panel">
@@ -305,15 +307,15 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
               {isInviter
                 ? theyRequestedLeave
                   ? <>
-                    <p className="muted small"><Handshake size={15} /> {opponent?.name ?? 'The other player'} asked to leave the game.</p>
+                    <p className="muted small"><Handshake size={15} /> {leavingPlayer?.name ?? 'A player'} asked to leave the game.</p>
                     <div className="btc-bet-actions">
-                      <button className="gold-button" onClick={() => sendAction({ type: 'respondLeave', accept: true })}><Check size={16} /> Approve &amp; end game</button>
+                      <button className="gold-button" onClick={() => sendAction({ type: 'respondLeave', accept: true })}><Check size={16} /> Approve{state.opponents.length <= 2 ? ' & end game' : ''}</button>
                       <button className="undo-button" onClick={() => sendAction({ type: 'respondLeave', accept: false })}><X size={16} /> Decline</button>
                     </div>
                   </>
-                  : <p className="muted small"><Lock size={13} /> As the host, you&apos;ll be asked to approve if {opponent?.name ?? 'your opponent'} wants to leave.</p>
+                  : <p className="muted small"><Lock size={13} /> As the host, you&apos;ll be asked to approve if an opponent wants to leave.</p>
                 : iRequestedLeave
-                  ? <p className="muted small"><DoorOpen size={15} /> Waiting for {opponent?.name ?? 'the host'} to approve your request to leave.</p>
+                  ? <p className="muted small"><DoorOpen size={15} /> Waiting for {host?.name ?? 'the host'} to approve your request to leave.</p>
                   : <button className="undo-button" onClick={() => sendAction({ type: 'requestLeave', by: userId })}><DoorOpen size={15} /> Ask to leave the game</button>}
             </div>
           </section>

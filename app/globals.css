@@ -428,6 +428,38 @@ body {
   position: relative;
 }
 
+.invitee-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.invitee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(224, 184, 75, 0.14);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--cream);
+}
+
+.invitee-chip button {
+  display: inline-flex;
+  background: transparent;
+  border: none;
+  color: rgba(246, 240, 226, 0.6);
+  cursor: pointer;
+  padding: 0.15rem;
+}
+
+.invitee-chip button:hover {
+  color: var(--cream);
+}
+
 .autocomplete-list {
   list-style: none;
   margin: 0.4rem 0 0.8rem;

@@ -163,13 +163,14 @@ export function reducer(state: State, action: Action): State {
     const amount = parseMoney(state.limit);
     if (amount === null || amount <= 0) return { ...state, error: 'Enter a positive limit amount.' };
     const reachedLimit = positiveAfterSplitSum(state.opponents) >= amount;
-    return { ...state, limitAmount: amount, error: '', gameOver: reachedLimit, message: reachedLimit ? `Game over — the ${amount / 100} limit was already reached. See the settlement preview for the final payout.` : state.message };
+    return { ...state, limitAmount: amount, error: '', gameOver: reachedLimit, sessionEnded: state.sessionEnded || reachedLimit, message: reachedLimit ? `Game over — the ${amount / 100} limit was already reached. This session is now closed. See the settlement preview for the final payout.` : state.message };
   }
   if (action.type === 'clearLimit') return { ...state, limitAmount: null, limit: '', error: '', gameOver: false };
   if (!state.started) return state;
 
   if (action.type === 'requestLeave') {
     if (state.sessionEnded) return state;
+    if (action.by === state.opponents[0]?.id) return { ...state, error: 'The host can’t request to leave.' };
     if (state.leaveRequest) return { ...state, error: 'There is already a pending request to leave.' };
     const requester = state.opponents.find(p => p.id === action.by);
     return { ...state, leaveRequest: { by: action.by }, error: '', message: `${requester?.name ?? 'A player'} asked to leave the game. Waiting for the host to respond.` };
@@ -177,11 +178,32 @@ export function reducer(state: State, action: Action): State {
   if (action.type === 'respondLeave') {
     if (!state.leaveRequest) return state;
     if (!action.accept) return { ...state, leaveRequest: null, error: '', message: 'The request to leave was declined.' };
-    return { ...state, leaveRequest: null, sessionEnded: true, error: '', message: 'The host approved the request to leave. This session is now closed.' };
+
+    const leavingId = state.leaveRequest.by;
+    const leaving = state.opponents.find(p => p.id === leavingId);
+    const remaining = state.opponents.filter(p => p.id !== leavingId);
+    // Only the host is left — there's no one to play against, so the whole
+    // session ends. Otherwise the remaining opponents keep playing.
+    const wholeGameOver = remaining.length <= 1;
+    const reselected = state.selected === leavingId ? nextOpponentId(state.opponents, leavingId) : state.selected;
+
+    return {
+      ...state,
+      opponents: remaining,
+      leaveRequest: null,
+      selected: wholeGameOver ? state.selected : reselected,
+      sessionEnded: wholeGameOver,
+      gameOver: state.gameOver || wholeGameOver,
+      round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, bet: '', streak: false,
+      error: '',
+      message: wholeGameOver
+        ? `${leaving?.name ?? 'A player'} left and no opponents remain. This session is now closed.`
+        : `${leaving?.name ?? 'A player'} left the game. Play continues with ${remaining.length} opponent${remaining.length === 1 ? '' : 's'}.`,
+    };
   }
 
   if (state.gameOver && ['deposit', 'split', 'deal', 'placeBet', 'pass', 'revealThird', 'resolve'].includes(action.type)) {
-    return { ...state, error: 'Game over — the money limit was reached. Raise or remove the limit to keep playing.' };
+    return { ...state, error: 'Game over — the money limit was reached and this session is closed.' };
   }
 
   const commit = (nextOpponents: Opponent[], nextMessage: string) => {
@@ -190,9 +212,10 @@ export function reducer(state: State, action: Action): State {
     return {
       ...state,
       opponents: nextOpponents,
-      message: reachedLimit ? `Game over — the ${state.limitAmount! / 100} limit was reached. See the settlement preview for the final payout.` : nextMessage,
+      message: reachedLimit ? `Game over — the ${state.limitAmount! / 100} limit was reached. This session is now closed. See the settlement preview for the final payout.` : nextMessage,
       error: '',
       gameOver: state.gameOver || reachedLimit,
+      sessionEnded: state.sessionEnded || reachedLimit,
     };
   };
 

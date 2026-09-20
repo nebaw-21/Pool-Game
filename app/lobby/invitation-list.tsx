@@ -6,8 +6,9 @@ import { createClient } from '@/lib/supabase/client';
 
 const money = (cents: number) => (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
-type Incoming = { id: string; depositCents: number; limitCents: number | null; otherUsername: string };
-type Outgoing = { id: string; status: string; sessionId: string | null; depositCents: number; limitCents: number | null; otherUsername: string };
+type Incoming = { id: string; depositCents: number; limitCents: number | null; otherUsername: string; accepted: boolean; sessionId: string | null };
+type OutgoingInvitee = { username: string; status: string };
+type Outgoing = { id: string; sessionId: string | null; depositCents: number; limitCents: number | null; invitees: OutgoingInvitee[] };
 
 export default function InvitationList({ userId, initialIncoming, initialOutgoing }: { userId: string; initialIncoming: Incoming[]; initialOutgoing: Outgoing[] }) {
   const router = useRouter();
@@ -15,22 +16,19 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
   const [error, setError] = useState('');
 
   // Realtime is the fast path, but WebSocket delivery isn't guaranteed the
-  // instant it happens (subscription not fully established yet, a
-  // backgrounded tab throttling the socket, or Realtime simply not enabled
-  // for a table in the Supabase project). Refresh on subscribe-confirmed, on
-  // tab focus, and on a short poll so a new invite always shows up promptly
-  // even if a specific postgres_changes event is missed.
+  // instant it happens. Refresh on subscribe-confirmed, on tab focus, and on
+  // a short poll so invites and batch updates always show up promptly.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
       .channel(`invitations:${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `invitee_id=eq.${userId}` }, () => router.refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `inviter_id=eq.${userId}` }, () => router.refresh())
-      // A session ending (status flips to 'ended') doesn't touch the
-      // invitations row itself, so listen for it directly to drop the
-      // stale "Join table" link without needing a manual reload.
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player1_id=eq.${userId}` }, () => router.refresh())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player2_id=eq.${userId}` }, () => router.refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invite_batches', filter: `inviter_id=eq.${userId}` }, () => router.refresh())
+      // A batch's session starting/ending doesn't touch my own invitation
+      // row, and an invitee can't be filtered on invite_batches directly, so
+      // also listen broadly for game_sessions changes and let the poll below
+      // cover the rest.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'game_sessions' }, () => router.refresh())
       .subscribe(status => {
         if (status === 'SUBSCRIBED') router.refresh();
       });
@@ -73,11 +71,18 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
       <div className="roster">
         {initialIncoming.map(invite => (
           <div key={invite.id} className="player-row">
-            <span className="player-name"><b>{invite.otherUsername}</b> wants to play — deposit {money(invite.depositCents)}{invite.limitCents ? `, limit ${money(invite.limitCents)}` : ''}</span>
-            <div className="btc-bet-actions">
-              <button className="gold-button" disabled={responding === invite.id} onClick={() => respond(invite.id, true)}><Check size={16} /> Accept</button>
-              <button className="undo-button" disabled={responding === invite.id} onClick={() => respond(invite.id, false)}><X size={16} /> Decline</button>
-            </div>
+            <span className="player-name">
+              <b>{invite.otherUsername}</b> invited you — deposit {money(invite.depositCents)}{invite.limitCents ? `, limit ${money(invite.limitCents)}` : ''}
+              {invite.accepted && !invite.sessionId && <small>Waiting for other invited players to respond…</small>}
+            </span>
+            {invite.sessionId
+              ? <a className="gold-button" href={`/table/${invite.sessionId}`}>Join table</a>
+              : invite.accepted
+                ? <span className="turn-badge">Accepted</span>
+                : <div className="btc-bet-actions">
+                  <button className="gold-button" disabled={responding === invite.id} onClick={() => respond(invite.id, true)}><Check size={16} /> Accept</button>
+                  <button className="undo-button" disabled={responding === invite.id} onClick={() => respond(invite.id, false)}><X size={16} /> Decline</button>
+                </div>}
           </div>
         ))}
       </div>
@@ -85,12 +90,15 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
       <p className="muted small" style={{ marginTop: 20 }}><Send size={14} /> Sent</p>
       {initialOutgoing.length === 0 && <p className="muted small">You haven&apos;t sent any invites yet.</p>}
       <div className="roster">
-        {initialOutgoing.map(invite => (
-          <div key={invite.id} className="player-row">
-            <span className="player-name">To <b>{invite.otherUsername}</b> — deposit {money(invite.depositCents)}{invite.limitCents ? `, limit ${money(invite.limitCents)}` : ''}</span>
-            {invite.status === 'accepted' && invite.sessionId
-              ? <a className="gold-button" href={`/table/${invite.sessionId}`}>Join table</a>
-              : <span className="turn-badge">Waiting for response</span>}
+        {initialOutgoing.map(batch => (
+          <div key={batch.id} className="player-row">
+            <span className="player-name">
+              To <b>{batch.invitees.map(i => i.username).join(', ')}</b> — deposit {money(batch.depositCents)}{batch.limitCents ? `, limit ${money(batch.limitCents)}` : ''}
+              <small>{batch.invitees.map(i => `${i.username}: ${i.status}`).join(' · ')}</small>
+            </span>
+            {batch.sessionId
+              ? <a className="gold-button" href={`/table/${batch.sessionId}`}>Join table</a>
+              : <span className="turn-badge">Waiting for responses</span>}
           </div>
         ))}
       </div>
