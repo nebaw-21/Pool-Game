@@ -449,13 +449,14 @@ body {
   background: transparent;
   border: none;
   border-radius: 0.4rem;
-  color: var(--foreground, #f6f0e2);
+  color: var(--cream);
   cursor: pointer;
   font-size: 0.9rem;
 }
 
-.autocomplete-list button:hover {
-  background: rgba(246, 240, 226, 0.08);
+.autocomplete-list button:hover,
+.autocomplete-list button:focus-visible {
+  background: rgba(246, 240, 226, 0.12);
 }
 
 .error {

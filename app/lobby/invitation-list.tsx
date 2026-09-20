@@ -20,6 +20,11 @@ export default function InvitationList({ userId, initialIncoming, initialOutgoin
       .channel(`invitations:${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `invitee_id=eq.${userId}` }, () => router.refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `inviter_id=eq.${userId}` }, () => router.refresh())
+      // A session ending (status flips to 'ended') doesn't touch the
+      // invitations row itself, so listen for it directly to drop the
+      // stale "Join table" link without needing a manual reload.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player1_id=eq.${userId}` }, () => router.refresh())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `player2_id=eq.${userId}` }, () => router.refresh())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [userId, router]);
