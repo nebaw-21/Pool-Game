@@ -62,15 +62,43 @@ export default function TableClient({ sessionId, userId, initialState }: { sessi
     await sendAction(action);
   }
 
+  // Realtime is the fast path, but WebSocket delivery can be missed (a
+  // subscription that isn't fully established yet, a backgrounded tab that
+  // throttles the socket, a brief reconnect). A cheap poll-on-focus plus a
+  // slow background poll makes sure both players converge on the true state
+  // even if a postgres_changes event never arrives.
   useEffect(() => {
     const supabase = createClient();
+    let cancelled = false;
+
+    const refetch = async () => {
+      const { data } = await supabase.from('game_sessions').select('state').eq('id', sessionId).maybeSingle();
+      if (!cancelled && data) setState(data.state as State);
+    };
+
     const channel = supabase
       .channel(`session:${sessionId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` }, payload => {
         setState(payload.new.state as State);
       })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe(status => {
+        // Catch any change that landed in the gap between page load and the
+        // subscription actually going live.
+        if (status === 'SUBSCRIBED') refetch();
+      });
+
+    const onFocus = () => refetch();
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
+    const poll = setInterval(refetch, 4000);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
+      clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
   }, [sessionId]);
 
   useEffect(() => {
