@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Coins, Crown, Eye, Flag, Flame, Frown, PartyPopper, PieChart, RotateCcw, RotateCw, SkipForward, Spade, Trophy, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, Check, Coins, Crown, Eye, Flag, Flame, Frown, Handshake, PartyPopper, PieChart, RotateCcw, RotateCw, SkipForward, Spade, Trophy, X } from 'lucide-react';
 import { poolOf, evenShares, positiveAfterSplitSum, parseMoney, suitSymbol, isRed, type State, type Action, type Card } from '@/app/game';
 import { playDeal, playReveal, playWin, playLose, playLimitReached } from '@/app/sounds';
 import { createClient } from '@/lib/supabase/client';
@@ -29,8 +30,10 @@ function PlayingCard({ card, revealed, pending, size = 'lg', dealClass = '' }: {
   );
 }
 
-export default function TableClient({ sessionId, userId, initialState }: { sessionId: string; userId: string; initialState: State }) {
+export default function TableClient({ sessionId, userId, initialState, initialStatus }: { sessionId: string; userId: string; initialState: State; initialStatus: string }) {
+  const router = useRouter();
   const [state, setState] = useState<State>(initialState);
+  const [status, setStatus] = useState(initialStatus);
   const [betText, setBetText] = useState('');
   const [depositText, setDepositText] = useState('');
   const [limitText, setLimitText] = useState('');
@@ -40,11 +43,14 @@ export default function TableClient({ sessionId, userId, initialState }: { sessi
   const pool = poolOf(state.opponents), needsDeposit = pool === 0;
   const bet = parseMoney(betText), deposit = parseMoney(depositText);
   const player = state.opponents.find(p => p.id === state.selected);
+  const opponent = state.opponents.find(p => p.id !== userId);
   const myTurn = state.selected === userId;
   const canPlaceBet = phase === 'ready' && myTurn && bet !== null && bet > 0 && bet <= pool;
   const shares = evenShares(pool, state.opponents.length);
   const limitInput = parseMoney(limitText);
   const progress = positiveAfterSplitSum(state.opponents);
+  const iProposedEnd = state.endProposal?.by === userId;
+  const theyProposedEnd = state.endProposal !== null && state.endProposal.by !== userId;
 
   async function sendAction(action: Action) {
     const res = await fetch('/api/game-action', {
@@ -72,19 +78,20 @@ export default function TableClient({ sessionId, userId, initialState }: { sessi
     let cancelled = false;
 
     const refetch = async () => {
-      const { data } = await supabase.from('game_sessions').select('state').eq('id', sessionId).maybeSingle();
-      if (!cancelled && data) setState(data.state as State);
+      const { data } = await supabase.from('game_sessions').select('state, status').eq('id', sessionId).maybeSingle();
+      if (!cancelled && data) { setState(data.state as State); setStatus(data.status); }
     };
 
     const channel = supabase
       .channel(`session:${sessionId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` }, payload => {
         setState(payload.new.state as State);
+        setStatus(payload.new.status as string);
       })
-      .subscribe(status => {
+      .subscribe(subscribeStatus => {
         // Catch any change that landed in the gap between page load and the
         // subscription actually going live.
-        if (status === 'SUBSCRIBED') refetch();
+        if (subscribeStatus === 'SUBSCRIBED') refetch();
       });
 
     const onFocus = () => refetch();
@@ -128,6 +135,25 @@ export default function TableClient({ sessionId, userId, initialState }: { sessi
     if (state.gameOver && !wasGameOver.current) playLimitReached();
     wasGameOver.current = state.gameOver;
   }, [state.gameOver]);
+
+  useEffect(() => {
+    if (status !== 'ended') return;
+    const t = setTimeout(() => { router.push('/lobby'); router.refresh(); }, 2200);
+    return () => clearTimeout(t);
+  }, [status, router]);
+
+  if (status === 'ended') {
+    return <div className="app-shell">
+      <header className="topbar"><Link href="/lobby" className="brand"><Spade size={25} fill="currentColor" /> POOLROOM<span>.</span></Link></header>
+      <main>
+        <section className="panel setup-panel" style={{ maxWidth: 420, margin: '40px auto', textAlign: 'center' }}>
+          <Handshake className="gold" size={40} style={{ margin: '0 auto 12px' }} />
+          <h2>Game ended</h2>
+          <p className="muted small">Both players agreed to end this session. Taking you back to the lobby…</p>
+        </section>
+      </main>
+    </div>;
+  }
 
   return <div className={`app-shell ${flash?.outcome === 'lose' ? 'shake' : ''}`}>
     {flash && <div className={`result-flash ${flash.outcome}`} key={flash.token} role="status" aria-live="assertive" onAnimationEnd={() => sendAction({ type: 'clearFlash' })}>
@@ -266,6 +292,20 @@ export default function TableClient({ sessionId, userId, initialState }: { sessi
             )}
 
             <div className="action-footer"><p role="status">{state.error || state.message || 'The table is ready for its first deposit.'}</p><div className="btc-history-actions"><button className="undo-button" disabled={!state.history.length} onClick={() => sendAction({ type: 'undo' })}><RotateCcw size={16} /> Undo</button><button className="undo-button" disabled={!state.future.length} onClick={() => sendAction({ type: 'redo' })}><RotateCw size={16} /> Redo</button></div></div>
+
+            <div className="btc-end-game">
+              {theyProposedEnd
+                ? <>
+                  <p className="muted small"><Handshake size={15} /> {opponent?.name ?? 'The other player'} wants to end this game and return to the lobby.</p>
+                  <div className="btc-bet-actions">
+                    <button className="gold-button" onClick={() => sendAction({ type: 'respondEnd', accept: true })}><Check size={16} /> Accept &amp; end game</button>
+                    <button className="undo-button" onClick={() => sendAction({ type: 'respondEnd', accept: false })}><X size={16} /> Decline</button>
+                  </div>
+                </>
+                : iProposedEnd
+                  ? <p className="muted small"><Handshake size={15} /> Waiting for {opponent?.name ?? 'the other player'} to respond to your request to end the game.</p>
+                  : <button className="undo-button" onClick={() => sendAction({ type: 'proposeEnd', by: userId })}><Handshake size={15} /> Propose ending the game</button>}
+            </div>
           </section>
         </div>
       </div>

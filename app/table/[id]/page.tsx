@@ -11,12 +11,12 @@ export default async function TablePage({ params }: { params: Promise<{ id: stri
 
   const { data: session } = await supabase
     .from('game_sessions')
-    .select('id, player1_id, player2_id, state')
+    .select('id, player1_id, player2_id, state, status')
     .eq('id', id)
     .maybeSingle();
 
   if (!session) return notFound();
   if (user.id !== session.player1_id && user.id !== session.player2_id) return notFound();
 
-  return <TableClient sessionId={session.id} userId={user.id} initialState={session.state as State} />;
+  return <TableClient sessionId={session.id} userId={user.id} initialState={session.state as State} initialStatus={session.status} />;
 }

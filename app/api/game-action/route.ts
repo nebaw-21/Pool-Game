@@ -39,11 +39,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This action isn’t available online.' }, { status: 400 });
   }
 
-  const nextState = reducer(state, body.action);
+  // The proposer's identity is derived from their session, never trusted from
+  // the client, and only the OTHER participant may accept/decline.
+  let action: Action = body.action;
+  if (action.type === 'proposeEnd') {
+    action = { type: 'proposeEnd', by: user.id };
+  }
+  if (action.type === 'respondEnd') {
+    if (!state.endProposal) return NextResponse.json({ error: 'There’s no pending request to respond to.' }, { status: 409 });
+    if (state.endProposal.by === user.id) return NextResponse.json({ error: 'Only the other player can respond to your own request.' }, { status: 403 });
+  }
+
+  const nextState = reducer(state, action);
 
   const { error: updateError } = await admin
     .from('game_sessions')
-    .update({ state: nextState })
+    .update({ state: nextState, status: nextState.sessionEnded ? 'ended' : session.status })
     .eq('id', session.id);
   if (updateError) return NextResponse.json({ error: 'Could not save the game state.' }, { status: 500 });
 
