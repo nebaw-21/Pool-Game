@@ -20,8 +20,11 @@ export default async function TablePage({ params }: { params: Promise<{ id: stri
   // the lobby rather than a bare 404.
   if (!session) redirect('/lobby');
 
-  // A finished game has no table page any more.
-  if (session.status === 'ended') redirect('/lobby');
+  // A game that ended by someone leaving has no table page any more. One that
+  // ended on the money limit stays open so everyone can read the result and
+  // quit when they're ready.
+  const state = session.state as State;
+  if (session.status === 'ended' && !state.gameOver) redirect('/lobby');
 
-  return <TableClient sessionId={session.id} userId={user.id} initialState={session.state as State} initialStatus={session.status} />;
+  return <TableClient sessionId={session.id} userId={user.id} initialState={state} initialStatus={session.status} />;
 }

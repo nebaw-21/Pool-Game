@@ -122,6 +122,11 @@ export function afterSplitBalances(opponents: Opponent[]): number[] {
 
 export const positiveAfterSplitSum = (opponents: Opponent[]) => afterSplitBalances(opponents).reduce((sum, v) => sum + Math.max(v, 0), 0);
 
+// The money limit (and the split preview) are only evaluated once the pool is
+// empty; while money is still in the pool nothing is calculated.
+export const limitReached = (opponents: Opponent[], limitAmount: number | null) =>
+  limitAmount !== null && poolOf(opponents) === 0 && positiveAfterSplitSum(opponents) >= limitAmount;
+
 function nextOpponentId(opponents: Opponent[], currentId: string): string {
   if (!opponents.length) return '';
   const index = opponents.findIndex(o => o.id === currentId);
@@ -162,7 +167,7 @@ export function reducer(state: State, action: Action): State {
   if (action.type === 'setLimit') {
     const amount = parseMoney(state.limit);
     if (amount === null || amount <= 0) return { ...state, error: 'Enter a positive limit amount.' };
-    const reachedLimit = positiveAfterSplitSum(state.opponents) >= amount;
+    const reachedLimit = limitReached(state.opponents, amount);
     return { ...state, limitAmount: amount, error: '', gameOver: reachedLimit, sessionEnded: state.sessionEnded || reachedLimit, message: reachedLimit ? `Game over — the ${amount / 100} limit was already reached. This session is now closed. See the settlement preview for the final payout.` : state.message };
   }
   if (action.type === 'clearLimit') return { ...state, limitAmount: null, limit: '', error: '', gameOver: false };
@@ -193,7 +198,8 @@ export function reducer(state: State, action: Action): State {
       leaveRequest: null,
       selected: wholeGameOver ? state.selected : reselected,
       sessionEnded: wholeGameOver,
-      gameOver: state.gameOver || wholeGameOver,
+      // gameOver stays reserved for "the money limit was reached" so the
+      // client can tell a results-then-quit ending from a leave ending.
       round: null, phase: 'select', revealed1: false, revealed2: false, revealed3: false, activeBet: null, bet: '', streak: false,
       error: '',
       message: wholeGameOver
@@ -208,7 +214,7 @@ export function reducer(state: State, action: Action): State {
 
   const commit = (nextOpponents: Opponent[], nextMessage: string) => {
     if (!nextOpponents.every(p => Number.isSafeInteger(p.balance)) || !Number.isSafeInteger(nextOpponents.reduce((sum, p) => sum + Math.abs(p.balance), 0))) return { ...state, error: 'This amount is too large. Enter a smaller amount.' };
-    const reachedLimit = state.limitAmount !== null && positiveAfterSplitSum(nextOpponents) >= state.limitAmount;
+    const reachedLimit = limitReached(nextOpponents, state.limitAmount);
     return {
       ...state,
       opponents: nextOpponents,

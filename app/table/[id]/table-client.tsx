@@ -48,7 +48,8 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   const canPlaceBet = phase === 'ready' && myTurn && bet !== null && bet > 0 && bet <= pool;
   const shares = evenShares(pool, state.opponents.length);
   const limitInput = parseMoney(limitText);
-  const progress = positiveAfterSplitSum(state.opponents);
+  // The limit progress and the split preview are only calculated once the pool is empty.
+  const progress = needsDeposit ? positiveAfterSplitSum(state.opponents) : null;
   // The inviter (host) is always seated first — see respond-to-invitation.
   const host = state.opponents[0];
   const isInviter = host?.id === userId;
@@ -56,6 +57,10 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   const theyRequestedLeave = state.leaveRequest !== null && state.leaveRequest.by !== userId;
   const leavingPlayer = state.leaveRequest ? state.opponents.find(p => p.id === state.leaveRequest!.by) : undefined;
   const iAmStillSeated = !removed && state.opponents.some(p => p.id === userId);
+  const finished = status === 'ended';
+  // A limit-reached ending keeps everyone on the results page (with a Quit button);
+  // leave endings and removed players are sent back to the lobby.
+  const redirecting = (finished && !state.gameOver) || !iAmStillSeated;
 
   async function sendAction(action: Action) {
     const res = await fetch('/api/game-action', {
@@ -146,12 +151,12 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
   }, [state.gameOver]);
 
   useEffect(() => {
-    if (status !== 'ended' && iAmStillSeated) return;
+    if (!redirecting) return;
     const t = setTimeout(() => { router.push('/lobby'); router.refresh(); }, 2200);
     return () => clearTimeout(t);
-  }, [status, iAmStillSeated, router]);
+  }, [redirecting, router]);
 
-  if (status === 'ended' || !iAmStillSeated) {
+  if (redirecting) {
     return <div className="app-shell">
       <header className="topbar"><Link href="/lobby" className="brand"><Spade size={25} fill="currentColor" /> POOLROOM<span>.</span></Link></header>
       <main>
@@ -202,31 +207,39 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
             <section className={`panel limit-panel ${state.gameOver ? 'limit-reached' : ''}`}>
               <div className="section-heading"><div><p className="eyebrow">SESSION CAP</p><h2>Money limit</h2></div><Flag className="gold" size={22} /></div>
               {state.limitAmount === null
-                ? isInviter
+                ? isInviter && !finished
                   ? <>
-                    <p className="muted small">End the game automatically once opponents&apos; combined winnings (after an even split) reach this amount.</p>
+                    <p className="muted small">End the game automatically once opponents&apos; combined winnings reach this amount. It&apos;s only checked when the pool reaches zero.</p>
                     <form onSubmit={e => { e.preventDefault(); submitWithInput('limit', limitText, { type: 'setLimit' }); }}>
                       <label className="sr-only" htmlFor="limit">Money limit</label>
                       <div className="input-row"><input id="limit" inputMode="decimal" value={limitText} placeholder="e.g. 1000" onChange={e => setLimitText(e.target.value)} /><button className="gold-button" disabled={limitInput === null || limitInput <= 0}><Flag size={16} /> Set Limit</button></div>
                     </form>
                   </>
-                  : <p className="muted small"><Lock size={13} /> No money limit has been set. Only {host?.name ?? 'the host'} can set one.</p>
+                  : <p className="muted small"><Lock size={13} /> {finished ? 'No money limit was set.' : <>No money limit has been set. Only {host?.name ?? 'the host'} can set one.</>}</p>
                 : <>
-                  <div className="limit-progress">
-                    <div className="limit-progress-bar"><div className="limit-progress-fill" style={{ width: `${Math.min(100, (progress / state.limitAmount) * 100)}%` }} /></div>
-                    <span>{money(progress)} of {money(state.limitAmount)} reached</span>
-                  </div>
+                  {progress !== null && (
+                    <div className="limit-progress">
+                      <div className="limit-progress-bar"><div className="limit-progress-fill" style={{ width: `${Math.min(100, (progress / state.limitAmount) * 100)}%` }} /></div>
+                      <span>{money(progress)} of {money(state.limitAmount)} reached</span>
+                    </div>
+                  )}
                   {state.gameOver
-                    ? <p className="btc-result-line"><Trophy size={16} /> Limit reached — the game has ended. See the settlement preview below.</p>
-                    : <p className="muted small">The table will lock once winnings after a split reach {money(state.limitAmount)}.</p>}
-                  {isInviter
+                    ? <p className="btc-result-line"><Trophy size={16} /> Limit reached — the game has ended. See the final result below.</p>
+                    : progress === null
+                      ? <p className="muted small">Limit: {money(state.limitAmount)}. It&apos;s only checked once the pool reaches zero.</p>
+                      : <p className="muted small">The game ends once winnings reach {money(state.limitAmount)}.</p>}
+                  {finished
+                    ? null
+                    : isInviter
                     ? <button className="undo-button" onClick={() => sendAction({ type: 'clearLimit' })}><X size={15} /> Remove limit</button>
                     : <p className="muted small"><Lock size={13} /> Only {host?.name ?? 'the host'} can remove the limit.</p>}
                 </>}
             </section>
             <section className={`panel deposit-panel ${needsDeposit ? 'deposit-required' : ''}`}>
               <div><h2>Bet Deposit</h2><p className="muted small">{needsDeposit ? 'Collect from every opponent to open the pool.' : 'Add the same amount from every opponent.'}</p></div>
-              {isInviter
+              {finished
+                ? <p className="muted small"><Lock size={13} /> This session is closed.</p>
+                : isInviter
                 ? <form onSubmit={e => { e.preventDefault(); submitWithInput('deposit', depositText, { type: 'deposit' }); setDepositText(''); }}>
                   <label className="sr-only" htmlFor="deposit">Bet Deposit per opponent</label>
                   <div className="input-row"><input id="deposit" inputMode="decimal" value={depositText} placeholder="Amount per player" onChange={e => setDepositText(e.target.value)} /><button className="gold-button" disabled={deposit === null || deposit <= 0}><Coins size={17} />Add</button></div>
@@ -241,7 +254,8 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
               <div className="btc-gameover">
                 <Trophy size={34} />
                 <h3>Game over</h3>
-                <p className="muted small">The {money(state.limitAmount ?? 0)} money limit was reached. Betting is locked — scroll down to the settlement preview to see who&apos;s up and who&apos;s down.{isInviter ? ' Remove the limit if you want to keep playing.' : ''}</p>
+                <p className="muted small">The {money(state.limitAmount ?? 0)} money limit was reached and this session is closed. Take your time — scroll down to see who&apos;s up and who&apos;s down, then quit when you&apos;re ready.</p>
+                <button className="gold-button start-button" onClick={() => { router.push('/lobby'); router.refresh(); }}><DoorOpen size={18} /> Quit game</button>
               </div>
             )}
 
@@ -308,7 +322,7 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
 
             <div className="action-footer"><p role="status">{state.error || state.message || 'The table is ready for its first deposit.'}</p></div>
 
-            <div className="btc-end-game">
+            {!finished && <div className="btc-end-game">
               {isInviter
                 ? theyRequestedLeave
                   ? <>
@@ -322,21 +336,21 @@ export default function TableClient({ sessionId, userId, initialState, initialSt
                 : iRequestedLeave
                   ? <p className="muted small"><DoorOpen size={15} /> Waiting for {host?.name ?? 'the host'} to approve your request to leave.</p>
                   : <button className="undo-button" onClick={() => sendAction({ type: 'requestLeave', by: userId })}><DoorOpen size={15} /> Ask to leave the game</button>}
-            </div>
+            </div>}
           </section>
         </div>
       </div>
       <section className={`panel settlement-panel ${state.gameOver ? 'settlement-final' : ''}`}>
         <div className="section-heading"><div><p className="eyebrow">{state.gameOver ? 'FINAL RESULT' : 'SPLIT IT UP'}</p><h2>{state.gameOver ? 'Final settlement' : 'Settlement preview'}</h2></div>{state.gameOver ? <Trophy className="gold" size={24} /> : <PieChart className="gold" size={24} />}</div>
-        <p className="muted small">{state.gameOver ? 'The game has ended. Here’s who walked away up and who walked away down.' : 'See what happens if the current pool were split evenly across every opponent right now.'}</p>
+        <p className="muted small">{state.gameOver ? 'The game has ended. Here’s who walked away up and who walked away down.' : needsDeposit ? 'The pool is empty, so these balances are final.' : 'The split preview is calculated once the pool reaches zero.'}</p>
         <div className="settlement-table-wrap">
           <table className="settlement-table">
             <thead><tr><th>Opponent</th><th>Current balance</th><th>Even share of pool</th><th>Balance after split</th>{state.gameOver && <th>Result</th>}</tr></thead>
-            <tbody>{state.opponents.map((p, i) => { const after = p.balance + (shares[i] ?? 0); return <tr key={p.id} className={state.selected === p.id ? 'selected' : ''}><td><span className={`avatar tiny color-${i % 4}`}>{initials(p.name)}</span>{p.name}</td><td className={p.balance < 0 ? 'negative' : p.balance > 0 ? 'positive' : ''}>{p.balance > 0 ? '+' : ''}{money(p.balance)}</td><td className="positive">+{money(shares[i] ?? 0)}</td><td className={after < 0 ? 'negative' : after > 0 ? 'positive' : ''}>{after > 0 ? '+' : ''}{money(after)}</td>{state.gameOver && <td><span className={`settlement-badge ${after > 0 ? 'win' : after < 0 ? 'lose' : 'even'}`}>{after > 0 ? 'Won money' : after < 0 ? 'Lost money' : 'Broke even'}</span></td>}</tr>; })}</tbody>
-            <tfoot><tr><td>Total</td><td>{money(-pool)}</td><td className="positive">+{money(pool)}</td><td>{money(0)}</td>{state.gameOver && <td />}</tr></tfoot>
+            <tbody>{state.opponents.map((p, i) => { const after = p.balance + (shares[i] ?? 0); return <tr key={p.id} className={state.selected === p.id ? 'selected' : ''}><td><span className={`avatar tiny color-${i % 4}`}>{initials(p.name)}</span>{p.name}</td><td className={p.balance < 0 ? 'negative' : p.balance > 0 ? 'positive' : ''}>{p.balance > 0 ? '+' : ''}{money(p.balance)}</td>{needsDeposit ? <><td className="positive">+{money(shares[i] ?? 0)}</td><td className={after < 0 ? 'negative' : after > 0 ? 'positive' : ''}>{after > 0 ? '+' : ''}{money(after)}</td></> : <><td>—</td><td>—</td></>}{state.gameOver && <td><span className={`settlement-badge ${after > 0 ? 'win' : after < 0 ? 'lose' : 'even'}`}>{after > 0 ? 'Won money' : after < 0 ? 'Lost money' : 'Broke even'}</span></td>}</tr>; })}</tbody>
+            <tfoot><tr><td>Total</td><td>{money(-pool)}</td>{needsDeposit ? <><td className="positive">+{money(pool)}</td><td>{money(0)}</td></> : <><td>—</td><td>—</td></>}{state.gameOver && <td />}</tr></tfoot>
           </table>
         </div>
-        <div className="settlement-footer"><p className="muted small">{needsDeposit ? 'The pool is empty — nothing to split yet.' : `Splitting divides ${money(pool)} into ${state.opponents.length} even shares.`}</p><button className="gold-button" disabled={needsDeposit} onClick={() => sendAction({ type: 'split' })}><PieChart size={17} /> Split pool evenly</button></div>
+        <div className="settlement-footer"><p className="muted small">{needsDeposit ? 'The pool is empty — nothing to split yet.' : `Splitting divides ${money(pool)} into ${state.opponents.length} even shares.`}</p><button className="gold-button" disabled={needsDeposit || finished} onClick={() => sendAction({ type: 'split' })}><PieChart size={17} /> Split pool evenly</button></div>
       </section>
     </main>
   </div>;
